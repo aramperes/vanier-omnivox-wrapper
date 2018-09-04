@@ -29,7 +29,7 @@ async def run():
     schedule = await schedule_page.get_schedule(semester)
 
     # list the courses for the current semester
-    pprint(schedule.courses)
+    pprint(schedule.grid.grid)
 
 
 if __name__ == '__main__':

@@ -1,3 +1,5 @@
+import random
+from enum import Enum
 from typing import Optional, Dict, Tuple, List
 
 import requests
@@ -16,6 +18,14 @@ LEA_DOMAIN = "https://vaniercollege-estd.omnivox.ca/estd"
 
 # The global JS parser
 JS_PARSER = PyJsParser()
+
+
+class ScheduleDay(Enum):
+    MONDAY = 0
+    TUESDAY = 1
+    WEDNESDAY = 2
+    THURSDAY = 3
+    FRIDAY = 4
 
 
 class OmnivoxSemester:
@@ -60,12 +70,39 @@ class OmnivoxSemesterScheduleCourse:
         return f"Course(number={self.number}, section={self.section}, title={self.title}, teacher={self.teacher})"
 
 
+class OmnivoxSemesterScheduleGridClass:
+    def __init__(self, course: OmnivoxSemesterScheduleCourse, day: ScheduleDay, time_slot_start: int, length: int):
+        self.course = course
+        self.day = day
+        self.time_slot_start = time_slot_start
+        self.length = length
+
+    def __repr__(self) -> str:
+        return f"Class(course={self.course}, " \
+               f"from={time_slot_to_text(self.time_slot_start)}, " \
+               f"to={time_slot_to_text(self.time_slot_start + self.length)}"
+
+
+class OmnivoxSemesterScheduleGrid:
+    def __init__(self, grid: Dict[ScheduleDay, List[OmnivoxSemesterScheduleGridClass]]):
+        self.grid = grid
+
+    def get_class_at(self, day: ScheduleDay, time_slot: int) -> Optional[OmnivoxSemesterScheduleGridClass]:
+        if day not in self.grid:
+            return None
+        for classes in self.grid[day]:
+            if classes.time_slot_start <= time_slot < (classes.time_slot_start + classes.length):
+                return classes
+        return None
+
+
 class OmnivoxSemesterSchedule:
     """
     Represents a semester schedule.
     """
 
-    def __init__(self, semester: OmnivoxSemester, courses: Tuple[OmnivoxSemesterScheduleCourse]):
+    def __init__(self, semester: OmnivoxSemester, courses: Tuple[OmnivoxSemesterScheduleCourse],
+                 grid: OmnivoxSemesterScheduleGrid):
         """
         Initializes a semester schedule.
         :param semester: The semester for this schedule.
@@ -73,6 +110,7 @@ class OmnivoxSemesterSchedule:
         """
         self.semester = semester
         self.courses = courses
+        self.grid = grid
 
 
 class LeaScheduleSelectionPage:
@@ -187,6 +225,7 @@ class LeaScheduleSelectionPage:
 
         # Parse the schedule page
         courses: List[OmnivoxSemesterScheduleCourse] = []
+        schedule_grid: Dict[ScheduleDay, List[OmnivoxSemesterScheduleGridClass]] = {day: [] for day in ScheduleDay}
         schedule_d = pq(schedule_page_response.text)
 
         # Check if there is no warning - if there is, there are no courses for this semester.
@@ -210,9 +249,37 @@ class LeaScheduleSelectionPage:
                     )
                 )
 
+            schedule_grid_table = pq(schedule_d(".tbContenantPageLayout table table")[11])
+            schedule_grid_rows = schedule_grid_table.children("tr")
+
+            for row_index in range(1, len(schedule_grid_rows)):
+                time_slot = row_index - 1
+                schedule_grid_cols = pq(schedule_grid_rows[row_index]).children("td")
+                col_index = 1
+                for day_index in range(5):
+                    if col_index == len(schedule_grid_cols):
+                        continue
+                    day = ScheduleDay(day_index)
+                    # check if a class has started prior to this slot
+                    past_classes = schedule_grid[day]
+                    for past_class in past_classes:
+                        if past_class.time_slot_start <= time_slot < (past_class.time_slot_start + past_class.length):
+                            continue
+
+                    grid_cell = pq(schedule_grid_cols[col_index])
+                    if grid_cell.attr("bgcolor") != "#ffffff":
+                        col_index += 1
+                        continue
+                    class_length = int(grid_cell.attr("rowspan"))
+                    schedule_class = OmnivoxSemesterScheduleGridClass(grid_cell.text().split("\n")[0], day, time_slot,
+                                                                      class_length)
+                    schedule_grid[day].append(schedule_class)
+                    col_index += 1
+
         schedule = OmnivoxSemesterSchedule(
             semester=semester,
-            courses=tuple(courses)
+            courses=tuple(courses),
+            grid=OmnivoxSemesterScheduleGrid(schedule_grid)
         )
         self._schedule_cache[semester.id] = schedule
         return schedule
@@ -284,3 +351,7 @@ def get_js_redirect(tag) -> str:
     raw = tag.attr("onload")
     js = JS_PARSER.parse(raw)
     return js["body"][0]["expression"]["arguments"][0]["value"]
+
+
+def time_slot_to_text(slot: int) -> str:
+    return str(slot // 2 + 8) + ":" + ("00" if slot % 2 == 0 else "30")
