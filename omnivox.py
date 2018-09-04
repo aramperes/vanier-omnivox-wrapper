@@ -235,7 +235,7 @@ class OmnivoxSession:
 
 async def login(student_id, student_password) -> Optional[OmnivoxSession]:
     login_page_response = requests.get(
-        "https://vaniercollege.omnivox.ca/intr/Module/Identification/Login/Login.aspx?ReturnUrl=/intr",
+        url=VANIER_DOMAIN + "/intr/Module/Identification/Login/Login.aspx?ReturnUrl=/intr",
         headers=HEADER_UA
     )
     d = pq(login_page_response.text)
@@ -248,7 +248,7 @@ async def login(student_id, student_password) -> Optional[OmnivoxSession]:
         "k": k
     }
     login_post_response = requests.post(
-        url="https://vaniercollege.omnivox.ca/intr/Module/Identification/Login/Login.aspx?ReturnUrl=/intr",
+        url=VANIER_DOMAIN + "/intr/Module/Identification/Login/Login.aspx?ReturnUrl=/intr",
         data=login_form,
         headers=HEADER_UA,
         cookies=login_page_response.cookies,
@@ -262,7 +262,7 @@ async def login(student_id, student_password) -> Optional[OmnivoxSession]:
     cookies.update(login_post_response.cookies)
 
     homepage_response = requests.post(
-        url="https://vaniercollege.omnivox.ca/intr/",
+        url=VANIER_DOMAIN + "/intr/",
         headers=HEADER_UA,
         cookies=cookies,
         allow_redirects=False
